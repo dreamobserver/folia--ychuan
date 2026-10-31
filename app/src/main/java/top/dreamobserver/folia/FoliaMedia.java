@@ -17,20 +17,16 @@ import android.os.Looper;
 import android.webkit.WebView;
 
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 
-/**
- * 把网页里的 navigator.mediaSession 状态桥到安卓系统媒体控制：
- * 通知栏 + ColorOS 控制中心的播放卡片。
- * 控制在 WebView 里执行 JS（play/pause/上一首/下一首）。
- */
+/** 把网页播放状态桥到安卓系统媒体控制（通知栏 + 控制中心 + 锁屏）。 */
 public final class FoliaMedia {
 
-    public static final String CHANNEL_ID = "folia_media";
-    public static final int NOTIFICATION_ID = 2001;
+    private static final String CHANNEL_ID = "folia_media";
+    private static final int NOTIFICATION_ID = 2001;
+    private static final String DEBUG_URL = "https://music.dreamobserver.top/debug";
 
     private static MediaSession session;
     private static NotificationManager nm;
@@ -38,6 +34,9 @@ public final class FoliaMedia {
     private static final Handler main = new Handler(Looper.getMainLooper());
     private static String lastArtUrl = "";
     private static Bitmap lastArt;
+    private static WebView webView;
+    private static long lastDebugAt = 0;
+    private static String lastTitle = "";
 
     private FoliaMedia() {}
 
@@ -46,93 +45,85 @@ public final class FoliaMedia {
         nm = (NotificationManager) appContext.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null) {
             NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Folia 媒体控制", NotificationManager.IMPORTANCE_LOW);
+                    CHANNEL_ID, "Folia 媒体控制", NotificationManager.IMPORTANCE_DEFAULT);
             ch.setShowBadge(false);
+            ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(ch);
         }
         if (session == null) {
             session = new MediaSession(appContext, "Folia");
+            session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
             session.setActive(true);
             session.setCallback(new MediaSession.Callback() {
-                @Override public void onPlay() { FoliaMedia.sendCommand("play"); }
-                @Override public void onPause() { FoliaMedia.sendCommand("pause"); }
-                @Override public void onSkipToNext() { FoliaMedia.sendCommand("next"); }
-                @Override public void onSkipToPrevious() { FoliaMedia.sendCommand("prev"); }
+                @Override public void onPlay() { sendCommand("play"); }
+                @Override public void onPause() { sendCommand("pause"); }
+                @Override public void onSkipToNext() { sendCommand("next"); }
+                @Override public void onSkipToPrevious() { sendCommand("prev"); }
             });
         }
     }
 
-    /** 由 Activity 注入的 WebView；命令通过它执行 JS */
-    private static WebView webView;
+    public static void attach(WebView wv) { webView = wv; }
 
-    public static void attach(WebView wv) {
-        webView = wv;
-    }
-
-    public static void sendCommand(String cmd) {
+    public static void sendCommand(final String cmd) {
         main.post(() -> {
             try {
                 if (webView == null) return;
-                String js = "(function(cmd){try{" +
-                        "var a=document.querySelector('audio');" +
-                        "if(cmd==='play'&&a){a.play();}" +
-                        "if(cmd==='pause'&&a){a.pause();}" +
-                        "if(cmd==='next'||cmd==='prev'){" +
-                        "var keys=cmd==='next'?['下一','next','skip']:['上一','prev','previous'];" +
-                        "var bs=Array.prototype.slice.call(document.querySelectorAll('button,[role=button]'));" +
-                        "for(var i=0;i<bs.length;i++){var t=(bs[i].getAttribute('aria-label')||bs[i].title||bs[i].textContent||'').toLowerCase();" +
-                        "for(var k=0;k<keys.length;k++){if(t.indexOf(keys[k])>=0){bs[i].click();return;}}}}" +
-                        "}catch(e){}})(" + quote(cmd) + ")";
+                String js = "(function(c){try{var a=document.querySelector('audio');" +
+                        "if(c==='play'&&a){a.play();}if(c==='pause'&&a){a.pause();}" +
+                        "if(c==='next'||c==='prev'){var keys=c==='next'?['下一','next','skip']:['上一','prev']; }" +
+                        "}catch(e){}})('" + cmd + "')";
                 webView.evaluateJavascript(js, null);
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
         });
     }
 
-    private static String quote(String s) {
-        return "'" + s.replace("'", "") + "'";
-    }
-
-    /** 每 2 秒从页面读一次媒体状态并刷新通知 */
+    /** 每 2 秒读页面状态；兼容 WebView 没有 mediaSession 的情况 */
     public static void refresh(WebView wv) {
         try {
-            String js = "(function(){try{var m=navigator.mediaSession&&navigator.mediaSession.metadata;" +
-                    "if(!m)return '';" +
-                    "var art=(m.artwork&&m.artwork.length)?m.artwork[m.artwork.length-1].src:'';" +
-                    "return JSON.stringify({t:m.title||'',a:m.artist||'',al:m.album||'',art:art," +
-                    "p:(navigator.mediaSession.playbackState==='playing')});" +
-                    "}catch(e){return '';}})()";
+            String js = "(function(){try{" +
+                    "var ms=navigator.mediaSession;var m=ms&&ms.metadata;" +
+                    "var art=(m&&m.artwork&&m.artwork.length)?m.artwork[m.artwork.length-1].src:'';" +
+                    "var a=document.querySelector('audio');" +
+                    "var playing=ms&&ms.playbackState?ms.playbackState==='playing':(a?!a.paused:false);" +
+                    "var dt=document.title||'';" +
+                    "var title=(m&&m.title)||dt||'';" +
+                    "var artist=(m&&m.artist)||'';" +
+                    "if(!artist){var el=document.querySelector('[class*=\"artist\"],[class*=\"singer\"]');if(el)artist=(el.textContent||'').trim().slice(0,40);}" +
+                    "return JSON.stringify({t:title,a:artist,art:art,p:!!playing,ms:!!ms,dt:dt});" +
+                    "}catch(e){return ''}})()";
             wv.evaluateJavascript(js, value -> {
-                if (value == null || value.equals("null") || value.length() < 3) return;
-                String raw = unquote(value);
-                if (raw.isEmpty()) return;
+                if (value == null || value.length() < 4) return;
+                String raw = decode(value);
+                if (raw == null || raw.isEmpty()) return;
                 applyJson(raw);
             });
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
     }
 
-    private static String unquote(String v) {
+    private static String decode(String evaluated) {
         try {
-            // evaluateJavascript 返回的是 JSON 字符串字面量
-            return new org.json.JSONArray("[" + v + "]").getString(0);
+            Object v = new org.json.JSONTokener(evaluated).nextValue();
+            return v == null ? "" : v.toString();
         } catch (Throwable t) {
-            try {
-                return new org.json.JSONTokener(v).nextValue().toString();
-            } catch (Throwable ignored) {
-                return "";
-            }
+            return "";
         }
     }
 
     private static void applyJson(String json) {
         try {
             org.json.JSONObject o = new org.json.JSONObject(json);
-            String title = o.optString("t", "");
-            String artist = o.optString("a", "");
+            String title = o.optString("t", "").trim();
+            String artist = o.optString("a", "").trim();
             String artUrl = o.optString("art", "");
             boolean playing = o.optBoolean("p", false);
-            if (title.isEmpty()) return;
+            boolean hasMs = o.optBoolean("ms", false);
+
+            if (title.isEmpty() && artist.isEmpty()) {
+                maybeDebug(json, hasMs);
+                return;
+            }
+            if (title.isEmpty()) title = "Folia";
 
             if (session != null) {
                 MediaMetadata.Builder md = new MediaMetadata.Builder()
@@ -142,8 +133,10 @@ public final class FoliaMedia {
                 session.setMetadata(md.build());
                 session.setPlaybackState(new PlaybackState.Builder()
                         .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                                | PlaybackState.ACTION_PLAY_PAUSE
                                 | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-                        .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, 0, 1f)
+                        .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                                PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
                         .build());
             }
             showNotification(title, artist, playing);
@@ -151,11 +144,37 @@ public final class FoliaMedia {
                 lastArtUrl = artUrl;
                 loadArt(artUrl);
             }
-        } catch (Throwable ignored) {
-        }
+            if (!title.equals(lastTitle)) {
+                lastTitle = title;
+                maybeDebug(json, hasMs);
+            }
+        } catch (Throwable ignored) {}
     }
 
-    private static void loadArt(String url) {
+    /** 首次拿到状态时把现场信息发回服务器，方便远程判断 WebView 支持情况 */
+    private static void maybeDebug(String json, boolean hasMs) {
+        long now = System.currentTimeMillis();
+        if (now - lastDebugAt < 60000) return;
+        lastDebugAt = now;
+        final String payload = "hasMediaSession=" + hasMs + "\n" + json;
+        new Thread(() -> {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(DEBUG_URL).openConnection();
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(payload.getBytes("UTF-8"));
+                }
+                conn.getResponseCode();
+                conn.disconnect();
+            } catch (Throwable ignored) {}
+        }).start();
+    }
+
+    private static void loadArt(final String url) {
         new Thread(() -> {
             try {
                 HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -163,13 +182,10 @@ public final class FoliaMedia {
                 conn.setReadTimeout(4000);
                 try (InputStream is = conn.getInputStream()) {
                     Bitmap bmp = BitmapFactory.decodeStream(is);
-                    if (bmp != null) {
-                        lastArt = bmp;
-                    }
+                    if (bmp != null) lastArt = bmp;
                 }
                 conn.disconnect();
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
         }).start();
     }
 
@@ -183,8 +199,8 @@ public final class FoliaMedia {
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
             Notification.Action prev = action("prev", "上一首", R.drawable.ic_skip_previous);
-            Notification.Action playPause = action(x(playing), playing ? "暂停" : "播放",
-                    playing ? R.drawable.ic_pause : R.drawable.ic_play);
+            Notification.Action playPause = action(playing ? "pause" : "play",
+                    playing ? "暂停" : "播放", playing ? R.drawable.ic_pause : R.drawable.ic_play);
             Notification.Action next = action("next", "下一首", R.drawable.ic_skip_next);
 
             Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -194,21 +210,17 @@ public final class FoliaMedia {
                     .setContentText(artist)
                     .setSmallIcon(R.drawable.ic_play)
                     .setContentIntent(contentIntent)
-                    .setOngoing(playing)
+                    .setOngoing(true)
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
-                    .addAction(prev)
-                    .addAction(playPause)
-                    .addAction(next)
-                    .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2));
+                    .setCategory(Notification.CATEGORY_TRANSPORT)
+                    .addAction(prev).addAction(playPause).addAction(next)
+                    .setStyle(new Notification.MediaStyle()
+                            .setMediaSession(session.getSessionToken())
+                            .setShowActionsInCompactView(0, 1, 2));
             if (lastArt != null) b.setLargeIcon(lastArt);
 
             nm.notify(NOTIFICATION_ID, b.build());
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static String x(boolean playing) {
-        return playing ? "pause" : "play";
+        } catch (Throwable ignored) {}
     }
 
     private static Notification.Action action(String cmd, String label, int icon) {
