@@ -1,21 +1,27 @@
 package top.dreamobserver.folia;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsetsController;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 /**
- * Folia 的 WebView 壳：不依赖 Chrome / TWA，任何机器都能起来。
- * 站点是 https://music.dreamobserver.top/，登录态与播放都在网页里完成。
+ * Folia 的 WebView 壳。
+ * - 不依赖 Chrome / TWA
+ * - 前台服务保活，切后台音乐不断
+ * - 状态栏深色 + 浅色图标
  */
 public class MainActivity extends Activity {
 
@@ -27,8 +33,20 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setStatusBarColor(Color.parseColor("#09090B"));
-        getWindow().setNavigationBarColor(Color.parseColor("#09090B"));
+
+        Window window = getWindow();
+        window.setStatusBarColor(Color.parseColor("#09090B"));
+        window.setNavigationBarColor(Color.parseColor("#09090B"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController c = window.getInsetsController();
+            if (c != null) {
+                c.setSystemBarsAppearance(0,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(0);
+        }
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#09090B"));
@@ -42,7 +60,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setUserAgentString(s.getUserAgentString() + " FoliaApp/2");
+        s.setUserAgentString(s.getUserAgentString() + " FoliaApp/3");
 
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
@@ -54,6 +72,16 @@ public class MainActivity extends Activity {
 
         setContentView(webView);
         webView.loadUrl(START_URL);
+
+        // 前台服务：让进程不被系统回收，音频在后台继续
+        startForegroundService(new Intent(this, FoliaKeepAliveService.class));
+
+        // Android 13+ 需要运行时通知权限，否则服务通知不显示
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
+            }
+        }
     }
 
     @Override
@@ -63,18 +91,6 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (webView != null) webView.onPause();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (webView != null) webView.onResume();
     }
 
     @Override
