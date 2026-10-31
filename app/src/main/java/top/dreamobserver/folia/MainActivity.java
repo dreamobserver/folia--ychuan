@@ -11,6 +11,8 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -78,6 +80,20 @@ public class MainActivity extends Activity {
         webView.loadUrl(START_URL);
 
         // 页面加载完再补一次沉浸式，防止某些 ROM 在首帧后把状态栏放回来
+        // 系统媒体控制：通知栏 + ColorOS 播放卡片
+        try {
+            FoliaMedia.init(this);
+            FoliaMedia.attach(webView);
+            final Handler handler = new Handler(Looper.getMainLooper());
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    try { FoliaMedia.refresh(webView); } catch (Throwable ignored) {}
+                    handler.postDelayed(this, 2000);
+                }
+            }, 2500);
+        } catch (Throwable ignored) {
+        }
+
         webView.postDelayed(this::hideSystemBars, 800);
         webView.postDelayed(this::hideSystemBars, 2500);
 
@@ -129,6 +145,17 @@ public class MainActivity extends Activity {
             } else {
                 getWindow().getDecorView().setSystemUiVisibility(
                         View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        try {
+            if (intent != null && intent.hasExtra("cmd")) {
+                FoliaMedia.sendCommand(intent.getStringExtra("cmd"));
             }
         } catch (Throwable ignored) {
         }
