@@ -9,16 +9,20 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 /**
- * Folia 的 WebView 壳。
- * 所有系统级调用都包了 try/catch：宁可少个特性，也不许闪退。
+ * Folia 的 WebView 壳（沉浸式）。
+ * 状态栏隐藏，内容铺满；任何系统调用失败都只降级、不闪退。
  */
 public class MainActivity extends Activity {
 
@@ -31,12 +35,12 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         try {
-            requestWindowFeature(Window.FEATURE_NO_TITLE);
-            Window window = getWindow();
-            window.setStatusBarColor(Color.parseColor("#09090B"));
-            window.setNavigationBarColor(Color.parseColor("#09090B"));
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.parseColor("#09090B"));
         } catch (Throwable ignored) {
         }
+        hideSystemBars();
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#09090B"));
@@ -49,7 +53,7 @@ public class MainActivity extends Activity {
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-            s.setUserAgentString(s.getUserAgentString() + " FoliaApp/4");
+            s.setUserAgentString(s.getUserAgentString() + " FoliaApp/5");
         } catch (Throwable ignored) {
         }
 
@@ -70,13 +74,17 @@ public class MainActivity extends Activity {
         setContentView(webView);
         webView.loadUrl(START_URL);
 
-        // 前台服务：失败就跳过，不影响 App 本身
+        // 页面加载完再补一次沉浸式，防止某些 ROM 在首帧后把状态栏放回来
+        webView.postDelayed(this::hideSystemBars, 800);
+        webView.postDelayed(this::hideSystemBars, 2500);
+
+        // 前台服务保活（失败忽略）
         try {
             startForegroundService(new Intent(this, FoliaKeepAliveService.class));
         } catch (Throwable ignored) {
         }
 
-        // Android 13+ 通知权限（拒绝也没关系）
+        // 通知权限（拒绝也不影响）
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -84,6 +92,29 @@ public class MainActivity extends Activity {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /** 隐藏状态栏；用户从顶部下滑可临时唤出 */
+    private void hideSystemBars() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsetsController c = getWindow().getInsetsController();
+                if (c != null) {
+                    c.hide(WindowInsets.Type.statusBars());
+                    c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemBars();
     }
 
     @Override

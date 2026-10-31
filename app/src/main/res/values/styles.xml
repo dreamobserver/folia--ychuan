@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 全屏主题：状态栏隐藏（沉浸式），刘海区域铺满 -->
+    <style name="AppTheme" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">#09090B</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
