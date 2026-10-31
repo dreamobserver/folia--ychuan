@@ -1,4 +1,4 @@
-name: build-folia-twa
+name: build-folia-apk
 
 on:
   workflow_dispatch:
@@ -17,56 +17,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure preinstalled Android SDK
+      - name: Configure Android SDK
         run: |
           SDK="$ANDROID_HOME"
           if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then SDK=/usr/local/lib/android/sdk; fi
-          echo "using SDK at $SDK"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
           CMDLINE=$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1)
-          echo "$CMDLINE" >> "$GITHUB_PATH"
+          echo "sdk=$SDK cmdline=$CMDLINE"
           yes | "$CMDLINE/sdkmanager" --licenses > /dev/null 2>&1 || true
-
-      - name: Install Bubblewrap
-        run: npm i -g @bubblewrap/cli
-
-      - name: Configure Bubblewrap (skip first-run wizard)
-        run: |
-          mkdir -p "$HOME/.bubblewrap"
-          node -e "const fs=require('fs');fs.writeFileSync(process.env.HOME+'/.bubblewrap/config.json', JSON.stringify({jdkPath:process.env.JAVA_HOME, androidSdkPath:process.env.ANDROID_HOME}))"
-          cat "$HOME/.bubblewrap/config.json"
 
       - name: Restore signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo 'missing secret KEYSTORE_BASE64' >&2; exit 1
-          fi
+          if [ -z "$KEYSTORE_BASE64" ]; then echo 'missing KEYSTORE_BASE64' >&2; exit 1; fi
           echo "$KEYSTORE_BASE64" | base64 -d > android.keystore
           ls -la android.keystore
 
-      - name: Build TWA
+      - name: Build release APK
         env:
-          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: bubblewrap build --skipPwaValidation
-
-      - name: Show signing fingerprint
-        env:
+          KEYSTORE_PATH: ../android.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: folia
         run: |
-          keytool -list -v -keystore android.keystore -storepass "$KEYSTORE_PASSWORD" | grep -i 'SHA256:' || true
-          ls -la *.apk *.aab assetlinks.json 2>/dev/null || true
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleRelease
 
-      - name: Upload artifacts
+      - name: Show output
+        run: |
+          find app/build/outputs -name '*.apk' -exec ls -la {} \;
+          keytool -printcert -jarfile $(find app/build/outputs -name '*.apk' | head -1) | grep -i 'SHA256' || true
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: folia-twa
-          path: |
-            *.apk
-            *.aab
-            assetlinks.json
-          if-no-files-found: warn
+          name: folia-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

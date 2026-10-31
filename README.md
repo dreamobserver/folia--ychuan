@@ -1,54 +1,43 @@
-# Folia TWA · GitHub Actions 构建说明
+# Folia Android App（TWA）
 
-把 https://music.dreamobserver.top 打包成 Android App（TWA，走系统 Chrome 内核）。
+把 https://music.dreamobserver.top 打包成 Android App。基于 Google 的 androidbrowserhelper（TWA），
+走系统 Chrome 内核，全屏、无地址栏、支持后台播放与通知栏控制。
 
-## 仓库里有什么
-
-```
-twa-manifest.json              Bubblewrap 打包配置（包名/图标/版本/签名路径）
-.github/workflows/build.yml    云端构建工作流
-.gitignore                     别把 keystore 提交上去
-```
-
-签名密钥不在仓库里，自己保存：
+## 结构
 
 ```
-android.keystore     签名文件
-别名                 folia
-密码                 见 KEYSTORE_SECRET.txt
-SHA-256             95:A5:81:4E:C2:C1:B1:55:A4:59:A3:EC:03:D4:78:6B:6D:FE:3D:42:2D:B6:03:FF:41:A7:AA:17:35:1A:3A:EB
+app/                     Android 应用模块（LauncherActivity + 图标 + 清单）
+.github/workflows/       云端构建（GitHub Actions）
+gradlew / gradle/        Gradle wrapper（8.9）
 ```
 
-## 一次性配置
+## 关键参数
 
-1. GitHub 新建仓库（private 也行），把本目录的 twa-manifest.json、.github/、.gitignore 推上去
-2. 仓库 → Settings → Secrets and variables → Actions，加三个 secret：
-
-| Secret | 值 |
+| 项 | 值 |
 | --- | --- |
-| KEYSTORE_BASE64 | main 分支下 android.keystore 的 base64（命令：base64 -w0 android.keystore） |
+| applicationId | top.dreamobserver.folia |
+| 站点 | https://music.dreamobserver.top/ |
+| minSdk / targetSdk | 21 / 34 |
+| 签名 | 由 CI 从 secret 还原 android.keystore，别名 folia |
+
+## 构建
+
+仓库 → Actions → build-folia-apk → Run workflow，约 3–5 分钟，产物在 artifact `folia-apk`。
+
+需要的 secrets（已配置）：
+
+| Secret | 说明 |
+| --- | --- |
+| KEYSTORE_BASE64 | android.keystore 的 base64 |
 | KEYSTORE_PASSWORD | keystore 密码 |
-| KEY_PASSWORD | key 密码（与上面相同） |
+| KEY_PASSWORD | key 密码 |
 
-3. 仓库 → Actions → build-folia-twa → Run workflow
+## 全屏条件
 
-## 构建产物
+域名下必须有 https://music.dreamobserver.top/.well-known/assetlinks.json，
+且 package_name 与签名指纹匹配（已配置）。不匹配时退回带地址栏的 Custom Tab。
 
-跑完在该次运行页面底部下载 folia-twa artifact：
+## 升级
 
-```
-app-release-signed.apk    直接安装
-assetlinks.json           和服务端那份一致（校验用）
-```
-
-## 全屏（去掉地址栏）的前提
-
-https://music.dreamobserver.top/.well-known/assetlinks.json 必须存在，且 package_name 与
-sha256_cert_fingerprints 和 APK 完全一致。已部署。
-
-换签名密钥后要同步更新这个文件，否则会退回带地址栏的模式。
-
-## 改版本
-
-改 twa-manifest.json 里的 appVersionName / appVersionCode，重跑 workflow。
-Android 要求 versionCode 递增，否则不能覆盖安装。
+改 app/build.gradle 里的 versionCode / versionName，重新跑 workflow。
+versionCode 必须递增，否则无法覆盖安装。
