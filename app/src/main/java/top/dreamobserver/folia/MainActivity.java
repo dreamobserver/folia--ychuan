@@ -6,6 +6,9 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.net.Uri;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
@@ -84,6 +87,9 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {
         }
 
+        // 像 VPN 一样申请"忽略电池优化"，避免被 ColorOS 省电策略杀掉
+        webView.postDelayed(this::requestBatteryExemption, 1500);
+
         // 通知权限（拒绝也不影响）
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -91,6 +97,23 @@ public class MainActivity extends Activity {
                 requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 申请忽略电池优化：弹系统对话框「允许 Folia 在后台运行吗」 */
+    private void requestBatteryExemption() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm == null) return;
+            if (pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Throwable t) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Throwable ignored) {
+            }
         }
     }
 
