@@ -98,7 +98,10 @@ public final class FoliaMedia {
                 "var dt=document.title||'';" +
                 "var title=(m&&m.title)||dt||'';" +
                 "var artist=(m&&m.artist)||'';" +
-                "return JSON.stringify({t:title,a:artist,art:art,ct:ct,dur:dur,p:!!playing,ms:!!ms});" +
+                "var cands=[];var nodes=document.querySelectorAll('[class*=\"title\"],[class*=\"artist\"],[class*=\"song\"],[class*=\"track\"],[class*=\"singer\"],[class*=\"cover\"]');" +
+                "for(var i=0;i<nodes.length&&cands.length<25;i++){var el=nodes[i];var tx=(el.textContent||'').replace(/\\s+/g,' ').trim();" +
+                "if(tx.length>0&&tx.length<80){cands.push({c:(el.className||'').toString().slice(0,60),x:tx.slice(0,40)});}}" +
+                "return JSON.stringify({t:title,a:artist,art:art,ct:ct,dur:dur,p:!!playing,ms:!!ms,cands:cands});" +
                 "}catch(e){return ''}})()";
         try {
             wv.evaluateJavascript(code, value -> {
@@ -128,6 +131,7 @@ public final class FoliaMedia {
             double ct = o.optDouble("ct", 0);
             double dur = o.optDouble("dur", 0);
 
+            if (!hasMs) maybeDebug(json, hasMs);
             if (title.isEmpty() && artist.isEmpty()) { maybeDebug(json, hasMs); return; }
             if (title.isEmpty()) title = "Folia";
 
