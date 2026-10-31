@@ -17,11 +17,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null || true
+      - name: Configure preinstalled Android SDK
+        run: |
+          SDK="$ANDROID_HOME"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then SDK=/usr/local/lib/android/sdk; fi
+          echo "using SDK at $SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          CMDLINE=$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1)
+          echo "cmdline tools: $CMDLINE"
+          echo "$CMDLINE" >> "$GITHUB_PATH"
+          yes | "$CMDLINE/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$CMDLINE/sdkmanager" --list_installed | tail -5 || true
 
       - name: Install Bubblewrap
         run: |
