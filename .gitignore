@@ -1,0 +1,9 @@
+*.keystore
+*.jks
+KEYSTORE_SECRET.txt
+KEYSTORE_BASE64.txt
+node_modules/
+twa/
+*.apk
+*.aab
+.DS_Store
