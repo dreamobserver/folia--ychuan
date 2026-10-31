@@ -94,8 +94,15 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {
         }
 
-        webView.postDelayed(this::hideSystemBars, 800);
-        webView.postDelayed(this::hideSystemBars, 2500);
+        // 反复确认几次，防止某些 ROM 在首帧/旋转/键盘收起后把状态栏放回来
+        final Handler fsHandler = new Handler(Looper.getMainLooper());
+        fsHandler.postDelayed(new Runnable() {
+            private int times = 0;
+            @Override public void run() {
+                hideSystemBars();
+                if (++times < 20) fsHandler.postDelayed(this, 1500);
+            }
+        }, 600);
 
         // 前台服务保活（失败忽略）
         try {
@@ -136,18 +143,26 @@ public class MainActivity extends Activity {
     /** 隐藏状态栏；用户从顶部下滑可临时唤出 */
     private void hideSystemBars() {
         try {
+            // 老办法：对所有版本都生效，ColorOS/OriginOS 更买账
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } catch (Throwable ignored) {}
+
+        try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // 让内容铺到系统栏与挖孔下面
+                getWindow().setDecorFitsSystemWindows(false);
                 WindowInsetsController c = getWindow().getInsetsController();
                 if (c != null) {
                     c.hide(WindowInsets.Type.statusBars());
                     c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                 }
-            } else {
-                getWindow().getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
     }
 
     @Override
