@@ -96,8 +96,14 @@ public final class FoliaMedia {
                 "var dur=(a&&!isNaN(a.duration)&&isFinite(a.duration))?a.duration:0;" +
                 "var playing=ms&&ms.playbackState?ms.playbackState==='playing':(a?!a.paused:false);" +
                 "var dt=document.title||'';" +
-                "var title=(m&&m.title)||dt||'';" +
+                "var title=(m&&m.title)||'';" +
                 "var artist=(m&&m.artist)||'';" +
+                "if(!title||title==='Folia'){var te=document.querySelector('[class*=\"group/title\"]');" +
+                "if(te){title=(te.innerText||te.textContent||'').trim();" +
+                "var host=te.parentElement&&te.parentElement.parentElement;" +
+                "if(host){var ls=(host.innerText||'').split('\\n').map(function(s){return s.trim()}).filter(Boolean);" +
+                "for(var li=0;li<ls.length;li++){if(ls[li]!==title&&ls[li].length<40){artist=ls[li];break;}}}}}" +
+                "if(!title){title=dt||'Folia';}" +
                 "var cands=[];var nodes=document.querySelectorAll('[class*=\"title\"],[class*=\"artist\"],[class*=\"song\"],[class*=\"track\"],[class*=\"singer\"],[class*=\"cover\"]');" +
                 "for(var i=0;i<nodes.length&&cands.length<25;i++){var el=nodes[i];var tx=(el.textContent||'').replace(/\\s+/g,' ').trim();" +
                 "if(tx.length>0&&tx.length<80){cands.push({c:(el.className||'').toString().slice(0,60),x:tx.slice(0,40)});}}" +
