@@ -26,15 +26,17 @@ jobs:
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
           CMDLINE=$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1)
-          echo "cmdline tools: $CMDLINE"
           echo "$CMDLINE" >> "$GITHUB_PATH"
           yes | "$CMDLINE/sdkmanager" --licenses > /dev/null 2>&1 || true
-          "$CMDLINE/sdkmanager" --list_installed | tail -5 || true
 
       - name: Install Bubblewrap
+        run: npm i -g @bubblewrap/cli
+
+      - name: Configure Bubblewrap (skip first-run wizard)
         run: |
-          npm i -g @bubblewrap/cli
-          bubblewrap --version
+          mkdir -p "$HOME/.bubblewrap"
+          node -e "const fs=require('fs');fs.writeFileSync(process.env.HOME+'/.bubblewrap/config.json', JSON.stringify({jdkPath:process.env.JAVA_HOME, androidSdkPath:process.env.ANDROID_HOME}))"
+          cat "$HOME/.bubblewrap/config.json"
 
       - name: Restore signing keystore
         env:
