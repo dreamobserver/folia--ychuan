@@ -106,10 +106,37 @@ public final class FoliaMedia {
     }
 
     public static void sendCommand(String cmd) {
-        js("(function(){try{var a=document.querySelector('audio');" +
-           "if('" + cmd + "'==='play'&&a){a.play();}" +
-           "if('" + cmd + "'==='pause'&&a){a.pause();}" +
-           "}catch(e){}})()");
+        js("(function(cmd){try{" +
+           "function pick(keys){" +
+           "  var els=Array.prototype.slice.call(document.querySelectorAll('button,[role=button],[tabindex],a,div'));" +
+           "  var best=null;" +
+           "  for(var i=0;i<els.length;i++){" +
+           "    var el=els[i];" +
+           "    var t=((el.getAttribute&&el.getAttribute('aria-label')||'')+' '+(el.title||'')+' '+(el.getAttribute&&el.getAttribute('data-testid')||'')).toLowerCase();" +
+           "    for(var k=0;k<keys.length;k++){ if(t.indexOf(keys[k])>=0){ best=el; break; } }" +
+           "    if(best) break;" +
+           "  }" +
+           "  return best;" +
+           "}" +
+           "var a=document.querySelector('audio');" +
+           "if(cmd==='next'||cmd==='prev'){" +
+           "  var b=pick(cmd==='next'?['下一','next','skip-forward','skipforward']:['上一','prev','skip-back','skipprevious']);" +
+           "  if(b){b.click();return;}" +
+           "  return;" +
+           "}" +
+           "if(cmd==='play'||cmd==='pause'||cmd==='toggle'){" +
+           "  var want = cmd==='play' ? ['播放','play'] : (cmd==='pause' ? ['暂停','pause'] : ['播放/暂停','暂停/播放','play/pause','toggle']);" +
+           "  var b=pick(want);" +
+           "  if(b){b.click();return;}" +
+           "  if(a){" +
+           "    if(cmd==='play'){a.play();}" +
+           "    else if(cmd==='pause'){a.pause();}" +
+           "    else { if(a.paused){a.play();}else{a.pause();} }" +
+           "    return;" +
+           "  }" +
+           "  if(cmd==='toggle'){ try{document.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',keyCode:32,which:32,bubbles:true}));}catch(e){} }" +
+           "}" +
+           "}catch(e){}})('" + cmd + "')");
     }
 
     public static void seekTo(double seconds) {
@@ -194,7 +221,37 @@ public final class FoliaMedia {
                 lastArtUrl = artUrl;
                 loadArt(artUrl);
             }
-            if (!title.equals(lastTitle)) { lastTitle = title; maybeDebug(json, hasMs); }
+            if (!title.equals(lastTitle)) { lastTitle = title; maybeDebug(json, hasMs); dumpControls(); }
+        } catch (Throwable ignored) {}
+    }
+
+    /** 把页面上所有可点按钮的 aria-label/title/class 上报一次，用来定位播放/切歌按钮 */
+    private static void dumpControls() {
+        try {
+            if (webView == null) return;
+            String code = "(function(){try{var out=[];var els=Array.prototype.slice.call(document.querySelectorAll('button,[role=button]'));" +
+                    "for(var i=0;i<els.length&&out.length<40;i++){var el=els[i];" +
+                    "var lab=(el.getAttribute('aria-label')||'');var ti=(el.title||'');var cl=(el.className||'').toString().slice(0,80);" +
+                    "var tx=(el.textContent||'').replace(/\\s+/g,' ').trim().slice(0,20);" +
+                    "if(lab||ti||tx){out.push({l:lab,t:ti,c:cl,x:tx});}}return JSON.stringify(out);}catch(e){return '[]'}})()";
+            webView.evaluateJavascript(code, v -> {
+                String raw = decode(v);
+                if (raw == null || raw.isEmpty()) return;
+                final String payload = "controls=" + raw;
+                new Thread(() -> {
+                    try {
+                        HttpURLConnection conn = (HttpURLConnection) new URL(DEBUG_URL).openConnection();
+                        conn.setConnectTimeout(5000);
+                        conn.setReadTimeout(5000);
+                        conn.setRequestMethod("POST");
+                        conn.setDoOutput(true);
+                        conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+                        try (OutputStream os = conn.getOutputStream()) { os.write(payload.getBytes("UTF-8")); }
+                        conn.getResponseCode();
+                        conn.disconnect();
+                    } catch (Throwable ignored) {}
+                }).start();
+            });
         } catch (Throwable ignored) {}
     }
 
