@@ -104,6 +104,17 @@ public class MainActivity extends Activity {
             }
         }, 600);
 
+        // 拿音频焦点，媒体按键才会优先路由到本 App
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am != null) {
+                am.requestAudioFocus(new android.media.AudioManager.OnAudioFocusChangeListener() {
+                    @Override public void onAudioFocusChange(int focusChange) { }
+                }, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN);
+            }
+        } catch (Throwable ignored) {
+        }
+
         // 前台服务保活（失败忽略）
         try {
             startForegroundService(new Intent(this, FoliaKeepAliveService.class));

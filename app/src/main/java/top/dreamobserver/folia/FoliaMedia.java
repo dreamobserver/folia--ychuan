@@ -54,6 +54,13 @@ public final class FoliaMedia {
             session = new MediaSession(appContext, "Folia");
             session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
             session.setActive(true);
+            try {
+                android.content.Intent mbIntent = new android.content.Intent(appContext, MediaButtonReceiver.class);
+                mbIntent.setAction(android.content.Intent.ACTION_MEDIA_BUTTON);
+                session.setMediaButtonReceiver(PendingIntent.getBroadcast(appContext, 0, mbIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+            } catch (Throwable ignored) {
+            }
             session.setCallback(new MediaSession.Callback() {
                 @Override public void onPlay() { sendCommand("play"); }
                 @Override public void onPause() { sendCommand("pause"); }
@@ -65,6 +72,32 @@ public final class FoliaMedia {
     }
 
     public static void attach(WebView wv) { webView = wv; }
+
+    /** 蓝牙/线控耳机按键 */
+    public static void onMediaKey(int keyCode) {
+        switch (keyCode) {
+            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY:
+            case android.view.KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case android.view.KeyEvent.KEYCODE_HEADSETHOOK:
+                togglePlay();
+                break;
+            case android.view.KeyEvent.KEYCODE_MEDIA_NEXT:
+                sendCommand("next");
+                break;
+            case android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                sendCommand("prev");
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** 播放/暂停切换：直接问页面 audio 的状态再决定 */
+    private static void togglePlay() {
+        js("(function(){try{var a=document.querySelector('audio');if(!a)return;" +
+           "if(a.paused){a.play();}else{a.pause();}}catch(e){}})()");
+    }
 
     private static void js(String code) {
         main.post(() -> {
